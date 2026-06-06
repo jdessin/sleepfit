@@ -3,7 +3,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 const DRIVE_FILE_NAME = "sleepfit_data.json";
 const SCOPES = "https://www.googleapis.com/auth/drive.appdata";
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 const fmt = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 const fmtFull = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
