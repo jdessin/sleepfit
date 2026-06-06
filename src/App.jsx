@@ -522,9 +522,18 @@ export default function App() {
       setSyncStatus({ ok: null, msg: "Syncing…" });
       syncFetch(passcode, "GET")
         .then(data => {
-          if (data && typeof data === "object" && Object.keys(data).length > 0) {
+          const remoteHasData = data && typeof data === "object" && Object.keys(data).length > 0;
+          if (remoteHasData) {
+            // Server has data — use it
             setEntries(data);
             try { localStorage.setItem("sleepfit_v3", JSON.stringify(data)); } catch {}
+          } else {
+            // Server is empty — push local data up
+            const local = localStorage.getItem("sleepfit_v3");
+            const localData = local ? JSON.parse(local) : null;
+            if (localData && Object.keys(localData).length > 0) {
+              syncFetch(passcode, "POST", localData).catch(() => {});
+            }
           }
           const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
           localStorage.setItem("sleepfit_last_synced", t);
