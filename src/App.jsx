@@ -601,7 +601,7 @@ export default function App() {
       // Redirect-based OAuth flow for mobile
       const params = new URLSearchParams({
         client_id: cid,
-        redirect_uri: window.location.origin + window.location.pathname,
+        redirect_uri: window.location.origin,
         response_type: "token",
         scope: SCOPES,
         include_granted_scopes: "true",
