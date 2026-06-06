@@ -451,7 +451,7 @@ function Settings({ onExportCSV, onClearData, syncStatus, onSavePasscode }) {
           </div>
         )}
         <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, padding: "10px 12px", background: "var(--color-background-secondary)", borderRadius: 8, lineHeight: 1.7 }}>
-          Setup: 1) In your Vercel dashboard → Storage → Create KV Database → Connect to this project. 2) In Vercel Settings → Environment Variables → add <strong>SYNC_PASSCODE</strong> with any password you choose. 3) Enter that same password below.
+          Setup: 1) Go to upstash.com → sign up free → Create Redis database → copy the REST URL and REST Token. 2) In Vercel dashboard → sleepfit project → Settings → Environment Variables → add UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, and SYNC_PASSCODE (any password you choose). 3) Redeploy, then enter your passcode below.
         </div>
         <input
           style={{ ...S.input, marginBottom: 10 }}
