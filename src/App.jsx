@@ -441,6 +441,7 @@ function Dashboard({ entries }) {
 function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
   const savedCid = localStorage.getItem("sleepfit_client_id");
   const isConnected = syncStatus?.ok === true;
+  const [editingCid, setEditingCid] = useState(false);
   return (
     <div style={S.page}>
       <div style={S.card}>
@@ -453,16 +454,19 @@ function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
             <span style={S.syncDot(syncStatus.ok)} />{syncStatus.msg}
           </div>
         )}
-        {savedCid && !isConnected && (
+        {savedCid && !isConnected && !editingCid && (
           <div style={{ marginBottom: 12, padding: "10px 12px", background: "#FFF8E6", borderRadius: 8, border: "0.5px solid #F0D080" }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: "#7A5500", marginBottom: 6 }}>Drive not connected this session</div>
             <div style={{ fontSize: 12, color: "#7A5500", marginBottom: 10 }}>Tap below to reconnect — your Client ID is saved.</div>
-            <button style={{ ...S.btn("full"), background: "#185FA5", color: "#fff", border: "none" }} onClick={() => onDriveConnect(savedCid)}>
+            <button style={{ ...S.btn("full"), background: "#185FA5", color: "#fff", border: "none", marginBottom: 8 }} onClick={() => onDriveConnect(savedCid)}>
               Reconnect Google Drive
+            </button>
+            <button style={{ ...S.btn("full"), fontSize: 12 }} onClick={() => setEditingCid(true)}>
+              Enter a different Client ID
             </button>
           </div>
         )}
-        {!savedCid && (
+        {(!savedCid || editingCid) && (
           <>
             <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, padding: "10px 12px", background: "var(--color-background-secondary)", borderRadius: 8, lineHeight: 1.7 }}>
               Setup: 1) console.cloud.google.com → New project → Enable Drive API → Credentials → OAuth Web Client ID → add this page URL as authorized origin. 2) Paste Client ID below.
@@ -470,7 +474,7 @@ function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
             <input style={{ ...S.input, marginBottom: 10 }} id="client-id-input" placeholder="Paste Google OAuth Client ID here..." />
             <button style={S.btn("full")} onClick={() => {
               const id = document.getElementById("client-id-input").value.trim();
-              if (id) onDriveConnect(id);
+              if (id) { setEditingCid(false); onDriveConnect(id); }
             }}>Connect Google Drive</button>
           </>
         )}
