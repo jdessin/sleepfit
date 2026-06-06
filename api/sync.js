@@ -22,7 +22,7 @@ export default async function handler(req, res) {
       await fetch(`${url}/set/sleepfit_data`, {
         method: "POST",
         headers: auth,
-        body: JSON.stringify(JSON.stringify(req.body)),
+        body: JSON.stringify(req.body),
       });
       return res.json({ ok: true });
     }
