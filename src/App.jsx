@@ -523,20 +523,24 @@ export default function App() {
       syncFetch(passcode, "GET")
         .then(data => {
           const remoteHasData = data && typeof data === "object" && Object.keys(data).length > 0;
-          if (remoteHasData) {
-            // Server has data — use it
+          const localRaw = localStorage.getItem("sleepfit_v3");
+          const localData = localRaw ? JSON.parse(localRaw) : null;
+          const localModified = Number(localStorage.getItem("sleepfit_local_modified") || 0);
+          const lastSynced   = Number(localStorage.getItem("sleepfit_last_synced_ts")  || 0);
+          const localIsNewer = localModified > lastSynced;
+
+          if (remoteHasData && !localIsNewer) {
+            // Server data is current — use it
             setEntries(data);
             try { localStorage.setItem("sleepfit_v3", JSON.stringify(data)); } catch {}
-          } else {
-            // Server is empty — push local data up
-            const local = localStorage.getItem("sleepfit_v3");
-            const localData = local ? JSON.parse(local) : null;
-            if (localData && Object.keys(localData).length > 0) {
-              syncFetch(passcode, "POST", localData).catch(() => {});
-            }
+          } else if (localData && Object.keys(localData).length > 0) {
+            // Local is newer or server empty — push local up
+            syncFetch(passcode, "POST", localData).catch(() => {});
           }
-          const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const now = Date.now();
+          const t = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
           localStorage.setItem("sleepfit_last_synced", t);
+          localStorage.setItem("sleepfit_last_synced_ts", String(now));
           setSyncStatus({ ok: true, msg: `Synced ✓ ${t}` });
         })
         .catch(() => setSyncStatus({ ok: false, msg: "Sync failed — check passcode in Settings" }));
@@ -549,7 +553,7 @@ export default function App() {
     setEntries(prev => {
       const day = prev[selectedDate] || EMPTY_DAY(selectedDate);
       const updated = { ...prev, [selectedDate]: { ...day, [key]: value } };
-      try { localStorage.setItem("sleepfit_v3", JSON.stringify(updated)); } catch {}
+      try { localStorage.setItem("sleepfit_v3", JSON.stringify(updated)); localStorage.setItem("sleepfit_local_modified", String(Date.now())); } catch {}
       const passcode = localStorage.getItem("sleepfit_passcode");
       if (passcode) {
         if (syncTimer.current) clearTimeout(syncTimer.current);
@@ -601,8 +605,20 @@ export default function App() {
           newEntries[date] = base;
         });
         setEntries(newEntries);
-        try { localStorage.setItem("sleepfit_v3", JSON.stringify(newEntries)); } catch {}
-        setSyncStatus({ ok: null, msg: "CSV imported ✓" });
+        try { localStorage.setItem("sleepfit_v3", JSON.stringify(newEntries)); localStorage.setItem("sleepfit_local_modified", String(Date.now())); } catch {}
+        const passcode = localStorage.getItem("sleepfit_passcode");
+        if (passcode) {
+          syncFetch(passcode, "POST", newEntries)
+            .then(() => {
+              const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+              localStorage.setItem("sleepfit_last_synced", t);
+              localStorage.setItem("sleepfit_last_synced_ts", String(Date.now()));
+              setSyncStatus({ ok: true, msg: `CSV imported & synced ✓ ${t}` });
+            })
+            .catch(() => setSyncStatus({ ok: false, msg: "CSV imported but sync failed" }));
+        } else {
+          setSyncStatus({ ok: null, msg: "CSV imported ✓" });
+        }
       };
       reader.readAsText(file);
     };
