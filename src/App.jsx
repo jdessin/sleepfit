@@ -526,6 +526,34 @@ export default function App() {
       const stored = localStorage.getItem("sleepfit_v3");
       if (stored) setEntries(JSON.parse(stored));
     } catch {}
+
+    // Handle redirect-based OAuth return (mobile flow)
+    const hash = window.location.hash;
+    if (hash.includes("access_token=")) {
+      const params = new URLSearchParams(hash.slice(1));
+      const token = params.get("access_token");
+      window.history.replaceState(null, "", window.location.pathname);
+      if (token) {
+        setAccessToken(token);
+        const savedCid = localStorage.getItem("sleepfit_client_id");
+        if (savedCid) {
+          const savedFid = localStorage.getItem("sleepfit_drive_file_id");
+          (savedFid ? Promise.resolve(savedFid) : findOrCreateDriveFile(token))
+            .then(async fid => {
+              if (fid && !savedFid) localStorage.setItem("sleepfit_drive_file_id", fid);
+              setDriveFileId(fid);
+              const remote = await readDriveFile(token, fid);
+              if (remote && typeof remote === "object" && !Array.isArray(remote) && Object.keys(remote).length > 0) {
+                setEntries(remote);
+                try { localStorage.setItem("sleepfit_v3", JSON.stringify(remote)); } catch {}
+              }
+              const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+              localStorage.setItem("sleepfit_last_synced", t);
+              setSyncStatus({ ok: true, msg: `Drive connected ✓ ${t}` });
+            });
+        }
+      }
+    }
   }, []);
 
   const currentDay = entries[selectedDate] || EMPTY_DAY(selectedDate);
@@ -568,6 +596,19 @@ export default function App() {
 
   const onDriveConnect = async (cid) => {
     localStorage.setItem("sleepfit_client_id", cid);
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      // Redirect-based OAuth flow for mobile
+      const params = new URLSearchParams({
+        client_id: cid,
+        redirect_uri: window.location.origin + window.location.pathname,
+        response_type: "token",
+        scope: SCOPES,
+        include_granted_scopes: "true",
+      });
+      window.location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
+      return;
+    }
     try {
       await loadGapi();
       window.google.accounts.oauth2.initTokenClient({
