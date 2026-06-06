@@ -1,8 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const DRIVE_FILE_NAME = "sleepfit_data.json";
-const SCOPES = "https://www.googleapis.com/auth/drive.appdata";
-
 const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -438,46 +435,34 @@ function Dashboard({ entries }) {
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
-  const savedCid = localStorage.getItem("sleepfit_client_id");
-  const isConnected = syncStatus?.ok === true;
-  const [editingCid, setEditingCid] = useState(false);
+function Settings({ onExportCSV, onClearData, syncStatus, onSavePasscode }) {
+  const [passcode, setPasscode] = useState(localStorage.getItem("sleepfit_passcode") || "");
+  const saved = !!localStorage.getItem("sleepfit_passcode");
   return (
     <div style={S.page}>
       <div style={S.card}>
-        <div style={S.sTitle}>Google Drive sync</div>
+        <div style={S.sTitle}>Sync</div>
         <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 12, lineHeight: 1.6 }}>
-          Every change auto-saves locally and to Drive when connected. Open on phone or PC and your data is already there.
+          Every change auto-saves here and syncs to the server. Open on any device and your data is already there.
         </div>
         {syncStatus && (
-          <div style={{ fontSize: 12, marginBottom: 10, padding: "8px 12px", background: "var(--color-background-secondary)", borderRadius: 8 }}>
+          <div style={{ fontSize: 12, marginBottom: 12, padding: "8px 12px", background: "var(--color-background-secondary)", borderRadius: 8 }}>
             <span style={S.syncDot(syncStatus.ok)} />{syncStatus.msg}
           </div>
         )}
-        {savedCid && !isConnected && !editingCid && (
-          <div style={{ marginBottom: 12, padding: "10px 12px", background: "#FFF8E6", borderRadius: 8, border: "0.5px solid #F0D080" }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "#7A5500", marginBottom: 6 }}>Drive not connected this session</div>
-            <div style={{ fontSize: 11, color: "#7A5500", marginBottom: 10, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedCid}</div>
-            <button style={{ ...S.btn("full"), background: "#185FA5", color: "#fff", border: "none", marginBottom: 8 }} onClick={() => onDriveConnect(savedCid)}>
-              Reconnect Google Drive
-            </button>
-            <button style={{ ...S.btn("full"), fontSize: 12 }} onClick={() => setEditingCid(true)}>
-              Enter a different Client ID
-            </button>
-          </div>
-        )}
-        {(!savedCid || editingCid) && (
-          <>
-            <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, padding: "10px 12px", background: "var(--color-background-secondary)", borderRadius: 8, lineHeight: 1.7 }}>
-              Setup: 1) console.cloud.google.com → New project → Enable Drive API → Credentials → OAuth Web Client ID → add this page URL as authorized origin. 2) Paste Client ID below.
-            </div>
-            <input style={{ ...S.input, marginBottom: 10 }} id="client-id-input" placeholder="Paste Google OAuth Client ID here..." />
-            <button style={S.btn("full")} onClick={() => {
-              const id = document.getElementById("client-id-input").value.trim();
-              if (id) { setEditingCid(false); onDriveConnect(id); }
-            }}>Connect Google Drive</button>
-          </>
-        )}
+        <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, padding: "10px 12px", background: "var(--color-background-secondary)", borderRadius: 8, lineHeight: 1.7 }}>
+          Setup: 1) In your Vercel dashboard → Storage → Create KV Database → Connect to this project. 2) In Vercel Settings → Environment Variables → add <strong>SYNC_PASSCODE</strong> with any password you choose. 3) Enter that same password below.
+        </div>
+        <input
+          style={{ ...S.input, marginBottom: 10 }}
+          type="password"
+          placeholder="Enter your sync passcode…"
+          value={passcode}
+          onChange={e => setPasscode(e.target.value)}
+        />
+        <button style={{ ...S.btn("full"), background: "#185FA5", color: "#fff", border: "none" }} onClick={() => onSavePasscode(passcode.trim())}>
+          {saved ? "Update passcode" : "Save passcode & sync"}
+        </button>
       </div>
       <div style={S.card}>
         <div style={S.sTitle}>Export data</div>
@@ -517,9 +502,14 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const [entries, setEntries]           = useState({});
   const [syncStatus, setSyncStatus]     = useState(null);
-  const [driveFileId, setDriveFileId]   = useState(null);
-  const [accessToken, setAccessToken]   = useState(null);
   const syncTimer = useRef(null);
+
+  const syncFetch = (passcode, method, body) =>
+    fetch("/api/sync", {
+      method,
+      headers: { "x-passcode": passcode, "Content-Type": "application/json" },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
 
   useEffect(() => {
     try {
@@ -527,32 +517,20 @@ export default function App() {
       if (stored) setEntries(JSON.parse(stored));
     } catch {}
 
-    // Handle redirect-based OAuth return (mobile flow)
-    const hash = window.location.hash;
-    if (hash.includes("access_token=")) {
-      const params = new URLSearchParams(hash.slice(1));
-      const token = params.get("access_token");
-      window.history.replaceState(null, "", window.location.pathname);
-      if (token) {
-        setAccessToken(token);
-        const savedCid = localStorage.getItem("sleepfit_client_id");
-        if (savedCid) {
-          const savedFid = localStorage.getItem("sleepfit_drive_file_id");
-          (savedFid ? Promise.resolve(savedFid) : findOrCreateDriveFile(token))
-            .then(async fid => {
-              if (fid && !savedFid) localStorage.setItem("sleepfit_drive_file_id", fid);
-              setDriveFileId(fid);
-              const remote = await readDriveFile(token, fid);
-              if (remote && typeof remote === "object" && !Array.isArray(remote) && Object.keys(remote).length > 0) {
-                setEntries(remote);
-                try { localStorage.setItem("sleepfit_v3", JSON.stringify(remote)); } catch {}
-              }
-              const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-              localStorage.setItem("sleepfit_last_synced", t);
-              setSyncStatus({ ok: true, msg: `Drive connected ✓ ${t}` });
-            });
-        }
-      }
+    const passcode = localStorage.getItem("sleepfit_passcode");
+    if (passcode) {
+      setSyncStatus({ ok: null, msg: "Syncing…" });
+      syncFetch(passcode, "GET")
+        .then(data => {
+          if (data && typeof data === "object" && Object.keys(data).length > 0) {
+            setEntries(data);
+            try { localStorage.setItem("sleepfit_v3", JSON.stringify(data)); } catch {}
+          }
+          const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          localStorage.setItem("sleepfit_last_synced", t);
+          setSyncStatus({ ok: true, msg: `Synced ✓ ${t}` });
+        })
+        .catch(() => setSyncStatus({ ok: false, msg: "Sync failed — check passcode in Settings" }));
     }
   }, []);
 
@@ -563,21 +541,22 @@ export default function App() {
       const day = prev[selectedDate] || EMPTY_DAY(selectedDate);
       const updated = { ...prev, [selectedDate]: { ...day, [key]: value } };
       try { localStorage.setItem("sleepfit_v3", JSON.stringify(updated)); } catch {}
-      if (accessToken && driveFileId) {
+      const passcode = localStorage.getItem("sleepfit_passcode");
+      if (passcode) {
         if (syncTimer.current) clearTimeout(syncTimer.current);
         syncTimer.current = setTimeout(() => {
-          syncToDrive(updated, accessToken, driveFileId)
+          syncFetch(passcode, "POST", updated)
             .then(() => {
               const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
               localStorage.setItem("sleepfit_last_synced", t);
-              setSyncStatus({ ok: true, msg: `Synced to Drive ✓ ${t}` });
+              setSyncStatus({ ok: true, msg: `Synced ✓ ${t}` });
             })
             .catch(() => setSyncStatus({ ok: false, msg: "Sync failed" }));
         }, 1500);
       }
       return updated;
     });
-  }, [selectedDate, accessToken, driveFileId]);
+  }, [selectedDate]);
 
   const shiftDate = (days) => {
     const d = new Date(selectedDate + "T12:00:00");
@@ -586,75 +565,6 @@ export default function App() {
     if (next <= todayStr()) setSelectedDate(next);
   };
 
-  // Drive helpers
-  const loadGapi = () => new Promise(res => {
-    if (window.google?.accounts) { res(); return; }
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client"; s.onload = res;
-    document.head.appendChild(s);
-  });
-
-  const onDriveConnect = async (cid) => {
-    localStorage.setItem("sleepfit_client_id", cid);
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-    if (isMobile) {
-      // Redirect-based OAuth flow for mobile
-      const params = new URLSearchParams({
-        client_id: cid,
-        redirect_uri: window.location.origin,
-        response_type: "token",
-        scope: SCOPES,
-        include_granted_scopes: "true",
-      });
-      window.location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
-      return;
-    }
-    try {
-      await loadGapi();
-      window.google.accounts.oauth2.initTokenClient({
-        client_id: cid, scope: SCOPES,
-        callback: async (resp) => {
-          if (resp.error) { setSyncStatus({ ok: false, msg: "Auth failed: " + resp.error }); return; }
-          setAccessToken(resp.access_token);
-          const fid = await findOrCreateDriveFile(resp.access_token);
-          if (fid) localStorage.setItem("sleepfit_drive_file_id", fid);
-          setDriveFileId(fid);
-          if (fid) {
-            const remote = await readDriveFile(resp.access_token, fid);
-            if (remote && typeof remote === "object" && !Array.isArray(remote)) {
-              setEntries(remote);
-              try { localStorage.setItem("sleepfit_v3", JSON.stringify(remote)); } catch {}
-            }
-            const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            localStorage.setItem("sleepfit_last_synced", t);
-            setSyncStatus({ ok: true, msg: `Connected & synced ✓ ${t}` });
-          }
-        },
-      }).requestAccessToken();
-    } catch(e) { setSyncStatus({ ok: false, msg: "Error: " + e.message }); }
-  };
-
-  const findOrCreateDriveFile = async (token) => {
-    const r = await fetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name+%3D+%27"+DRIVE_FILE_NAME+"%27", { headers: { Authorization: "Bearer " + token } });
-    const list = await r.json();
-    if (list.files?.length) return list.files[0].id;
-    const form = new FormData();
-    form.append("metadata", new Blob([JSON.stringify({ name: DRIVE_FILE_NAME, parents: ["appDataFolder"] })], { type: "application/json" }));
-    form.append("file", new Blob(["{}"], { type: "application/json" }));
-    return (await (await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", { method: "POST", headers: { Authorization: "Bearer " + token }, body: form })).json()).id;
-  };
-
-  const readDriveFile = async (token, fileId) => {
-    try { return await (await fetch("https://www.googleapis.com/drive/v3/files/"+fileId+"?alt=media", { headers: { Authorization: "Bearer " + token } })).json(); } catch { return null; }
-  };
-
-  const syncToDrive = async (data, token, fileId) => {
-    if (!fileId) return;
-    await fetch("https://www.googleapis.com/upload/drive/v3/files/"+fileId+"?uploadType=media", {
-      method: "PATCH", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
-  };
 
   const onImportCSV = () => {
     const input = document.createElement("input");
@@ -721,17 +631,31 @@ export default function App() {
             <div style={{ fontSize: 17, fontWeight: 500, color: "var(--color-text-primary)" }}>
               {tab === "log" ? "Daily log" : tab === "dashboard" ? "Dashboard" : "Settings"}
             </div>
-            {(syncStatus || localStorage.getItem("sleepfit_client_id")) && (
+            {(syncStatus || localStorage.getItem("sleepfit_last_synced")) && (
               <div style={{ fontSize: 11, marginTop: 2 }}>
-                <span style={S.syncDot(syncStatus ? syncStatus.ok : null)} />
-                {syncStatus ? syncStatus.msg : (localStorage.getItem("sleepfit_last_synced") ? `Last synced ${localStorage.getItem("sleepfit_last_synced")}` : "Not synced yet")}
+                <span style={S.syncDot(syncStatus ? syncStatus.ok : true)} />
+                {syncStatus ? syncStatus.msg : `Last synced ${localStorage.getItem("sleepfit_last_synced")}`}
               </div>
             )}
           </div>
-          {localStorage.getItem("sleepfit_client_id") && syncStatus?.ok !== true && (
+          {localStorage.getItem("sleepfit_passcode") && syncStatus?.ok !== true && syncStatus?.ok !== null && (
             <button
               style={{ fontSize: 12, padding: "5px 12px", borderRadius: 8, border: "1px solid #185FA5", background: "none", color: "#185FA5", cursor: "pointer", fontFamily: "inherit" }}
-              onClick={() => onDriveConnect(localStorage.getItem("sleepfit_client_id"))}
+              onClick={() => {
+                const p = localStorage.getItem("sleepfit_passcode");
+                setSyncStatus({ ok: null, msg: "Syncing…" });
+                syncFetch(p, "GET")
+                  .then(data => {
+                    if (data && typeof data === "object" && Object.keys(data).length > 0) {
+                      setEntries(data);
+                      try { localStorage.setItem("sleepfit_v3", JSON.stringify(data)); } catch {}
+                    }
+                    const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                    localStorage.setItem("sleepfit_last_synced", t);
+                    setSyncStatus({ ok: true, msg: `Synced ✓ ${t}` });
+                  })
+                  .catch(() => setSyncStatus({ ok: false, msg: "Sync failed" }));
+              }}
             >
               Sync
             </button>
@@ -757,7 +681,21 @@ export default function App() {
         {tab === "log" && logTab === "workout" && <WorkoutSection       day={currentDay} update={update} />}
         {tab === "log" && logTab === "evening" && <EveningSection       day={currentDay} update={update} />}
         {tab === "dashboard" && <Dashboard entries={Object.values(entries)} />}
-        {tab === "settings"  && <Settings onExportCSV={onExportCSV} onClearData={onClearData} syncStatus={syncStatus} onDriveConnect={onDriveConnect} />}
+        {tab === "settings"  && <Settings onExportCSV={onExportCSV} onClearData={onClearData} syncStatus={syncStatus} onSavePasscode={p => {
+          localStorage.setItem("sleepfit_passcode", p);
+          setSyncStatus({ ok: null, msg: "Syncing…" });
+          syncFetch(p, "GET")
+            .then(data => {
+              if (data && typeof data === "object" && Object.keys(data).length > 0) {
+                setEntries(data);
+                try { localStorage.setItem("sleepfit_v3", JSON.stringify(data)); } catch {}
+              }
+              const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+              localStorage.setItem("sleepfit_last_synced", t);
+              setSyncStatus({ ok: true, msg: `Synced ✓ ${t}` });
+            })
+            .catch(() => setSyncStatus({ ok: false, msg: "Wrong passcode or KV not set up" }));
+        }} />}
       </div>
 
       <nav style={S.nav}>
