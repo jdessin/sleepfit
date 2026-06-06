@@ -439,6 +439,8 @@ function Dashboard({ entries }) {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
+  const savedCid = localStorage.getItem("sleepfit_client_id");
+  const isConnected = syncStatus?.ok === true;
   return (
     <div style={S.page}>
       <div style={S.card}>
@@ -451,14 +453,27 @@ function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
             <span style={S.syncDot(syncStatus.ok)} />{syncStatus.msg}
           </div>
         )}
-        <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, padding: "10px 12px", background: "var(--color-background-secondary)", borderRadius: 8, lineHeight: 1.7 }}>
-          Setup: 1) console.cloud.google.com → New project → Enable Drive API → Credentials → OAuth Web Client ID → add this page URL as authorized origin. 2) Paste Client ID below.
-        </div>
-        <input style={{ ...S.input, marginBottom: 10 }} id="client-id-input" placeholder="Paste Google OAuth Client ID here..." />
-        <button style={S.btn("full")} onClick={() => {
-          const id = document.getElementById("client-id-input").value.trim();
-          if (id) onDriveConnect(id);
-        }}>Connect Google Drive</button>
+        {savedCid && !isConnected && !syncStatus && (
+          <div style={{ marginBottom: 12, padding: "10px 12px", background: "#FFF8E6", borderRadius: 8, border: "0.5px solid #F0D080" }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#7A5500", marginBottom: 6 }}>Drive not connected this session</div>
+            <div style={{ fontSize: 12, color: "#7A5500", marginBottom: 10 }}>Tap below to reconnect — your Client ID is saved.</div>
+            <button style={{ ...S.btn("full"), background: "#185FA5", color: "#fff", border: "none" }} onClick={() => onDriveConnect(savedCid)}>
+              Reconnect Google Drive
+            </button>
+          </div>
+        )}
+        {!savedCid && (
+          <>
+            <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, padding: "10px 12px", background: "var(--color-background-secondary)", borderRadius: 8, lineHeight: 1.7 }}>
+              Setup: 1) console.cloud.google.com → New project → Enable Drive API → Credentials → OAuth Web Client ID → add this page URL as authorized origin. 2) Paste Client ID below.
+            </div>
+            <input style={{ ...S.input, marginBottom: 10 }} id="client-id-input" placeholder="Paste Google OAuth Client ID here..." />
+            <button style={S.btn("full")} onClick={() => {
+              const id = document.getElementById("client-id-input").value.trim();
+              if (id) onDriveConnect(id);
+            }}>Connect Google Drive</button>
+          </>
+        )}
       </div>
       <div style={S.card}>
         <div style={S.sTitle}>Export data</div>
@@ -507,6 +522,33 @@ export default function App() {
       const stored = localStorage.getItem("sleepfit_v3");
       if (stored) setEntries(JSON.parse(stored));
     } catch {}
+    const savedCid = localStorage.getItem("sleepfit_client_id");
+    if (savedCid) {
+      setSyncStatus({ ok: null, msg: "Reconnecting to Drive…" });
+      loadGapi().then(() => {
+        window.google.accounts.oauth2.initTokenClient({
+          client_id: savedCid, scope: SCOPES,
+          callback: async (resp) => {
+            if (resp.error) { setSyncStatus({ ok: false, msg: "Drive disconnected — go to Settings to reconnect" }); return; }
+            setAccessToken(resp.access_token);
+            const savedFid = localStorage.getItem("sleepfit_drive_file_id");
+            const fid = savedFid || await findOrCreateDriveFile(resp.access_token);
+            if (fid && !savedFid) localStorage.setItem("sleepfit_drive_file_id", fid);
+            setDriveFileId(fid);
+            if (fid) {
+              const remote = await readDriveFile(resp.access_token, fid);
+              if (remote && typeof remote === "object" && !Array.isArray(remote) && Object.keys(remote).length > 0) {
+                setEntries(remote);
+                try { localStorage.setItem("sleepfit_v3", JSON.stringify(remote)); } catch {}
+              }
+              const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+              localStorage.setItem("sleepfit_last_synced", t);
+              setSyncStatus({ ok: true, msg: `Drive connected ✓ ${t}` });
+            }
+          },
+        }).requestAccessToken({ prompt: "none" });
+      }).catch(() => setSyncStatus({ ok: false, msg: "Drive disconnected — go to Settings to reconnect" }));
+    }
   }, []);
 
   const currentDay = entries[selectedDate] || EMPTY_DAY(selectedDate);
@@ -520,7 +562,11 @@ export default function App() {
         if (syncTimer.current) clearTimeout(syncTimer.current);
         syncTimer.current = setTimeout(() => {
           syncToDrive(updated, accessToken, driveFileId)
-            .then(() => setSyncStatus({ ok: true, msg: "Synced to Drive ✓" }))
+            .then(() => {
+              const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+              localStorage.setItem("sleepfit_last_synced", t);
+              setSyncStatus({ ok: true, msg: `Synced to Drive ✓ ${t}` });
+            })
             .catch(() => setSyncStatus({ ok: false, msg: "Sync failed" }));
         }, 1500);
       }
@@ -553,6 +599,7 @@ export default function App() {
           if (resp.error) { setSyncStatus({ ok: false, msg: "Auth failed: " + resp.error }); return; }
           setAccessToken(resp.access_token);
           const fid = await findOrCreateDriveFile(resp.access_token);
+          if (fid) localStorage.setItem("sleepfit_drive_file_id", fid);
           setDriveFileId(fid);
           if (fid) {
             const remote = await readDriveFile(resp.access_token, fid);
@@ -560,7 +607,9 @@ export default function App() {
               setEntries(remote);
               try { localStorage.setItem("sleepfit_v3", JSON.stringify(remote)); } catch {}
             }
-            setSyncStatus({ ok: true, msg: "Connected & synced ✓" });
+            const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            localStorage.setItem("sleepfit_last_synced", t);
+            setSyncStatus({ ok: true, msg: `Connected & synced ✓ ${t}` });
           }
         },
       }).requestAccessToken();
@@ -654,9 +703,10 @@ export default function App() {
             <div style={{ fontSize: 17, fontWeight: 500, color: "var(--color-text-primary)" }}>
               {tab === "log" ? "Daily log" : tab === "dashboard" ? "Dashboard" : "Settings"}
             </div>
-            {syncStatus && (
+            {(syncStatus || localStorage.getItem("sleepfit_client_id")) && (
               <div style={{ fontSize: 11, marginTop: 2 }}>
-                <span style={S.syncDot(syncStatus.ok)} />{syncStatus.msg}
+                <span style={S.syncDot(syncStatus ? syncStatus.ok : null)} />
+                {syncStatus ? syncStatus.msg : (localStorage.getItem("sleepfit_last_synced") ? `Last synced ${localStorage.getItem("sleepfit_last_synced")}` : "Connecting to Drive…")}
               </div>
             )}
           </div>
