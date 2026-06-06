@@ -457,7 +457,7 @@ function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
         {savedCid && !isConnected && !editingCid && (
           <div style={{ marginBottom: 12, padding: "10px 12px", background: "#FFF8E6", borderRadius: 8, border: "0.5px solid #F0D080" }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: "#7A5500", marginBottom: 6 }}>Drive not connected this session</div>
-            <div style={{ fontSize: 12, color: "#7A5500", marginBottom: 10 }}>Tap below to reconnect — your Client ID is saved.</div>
+            <div style={{ fontSize: 11, color: "#7A5500", marginBottom: 10, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedCid}</div>
             <button style={{ ...S.btn("full"), background: "#185FA5", color: "#fff", border: "none", marginBottom: 8 }} onClick={() => onDriveConnect(savedCid)}>
               Reconnect Google Drive
             </button>
