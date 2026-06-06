@@ -453,7 +453,7 @@ function Settings({ onExportCSV, onClearData, syncStatus, onDriveConnect }) {
             <span style={S.syncDot(syncStatus.ok)} />{syncStatus.msg}
           </div>
         )}
-        {savedCid && !isConnected && !syncStatus && (
+        {savedCid && !isConnected && (
           <div style={{ marginBottom: 12, padding: "10px 12px", background: "#FFF8E6", borderRadius: 8, border: "0.5px solid #F0D080" }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: "#7A5500", marginBottom: 6 }}>Drive not connected this session</div>
             <div style={{ fontSize: 12, color: "#7A5500", marginBottom: 10 }}>Tap below to reconnect — your Client ID is saved.</div>
@@ -522,33 +522,6 @@ export default function App() {
       const stored = localStorage.getItem("sleepfit_v3");
       if (stored) setEntries(JSON.parse(stored));
     } catch {}
-    const savedCid = localStorage.getItem("sleepfit_client_id");
-    if (savedCid) {
-      setSyncStatus({ ok: null, msg: "Reconnecting to Drive…" });
-      loadGapi().then(() => {
-        window.google.accounts.oauth2.initTokenClient({
-          client_id: savedCid, scope: SCOPES,
-          callback: async (resp) => {
-            if (resp.error) { setSyncStatus({ ok: false, msg: "Drive disconnected — go to Settings to reconnect" }); return; }
-            setAccessToken(resp.access_token);
-            const savedFid = localStorage.getItem("sleepfit_drive_file_id");
-            const fid = savedFid || await findOrCreateDriveFile(resp.access_token);
-            if (fid && !savedFid) localStorage.setItem("sleepfit_drive_file_id", fid);
-            setDriveFileId(fid);
-            if (fid) {
-              const remote = await readDriveFile(resp.access_token, fid);
-              if (remote && typeof remote === "object" && !Array.isArray(remote) && Object.keys(remote).length > 0) {
-                setEntries(remote);
-                try { localStorage.setItem("sleepfit_v3", JSON.stringify(remote)); } catch {}
-              }
-              const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-              localStorage.setItem("sleepfit_last_synced", t);
-              setSyncStatus({ ok: true, msg: `Drive connected ✓ ${t}` });
-            }
-          },
-        }).requestAccessToken({ prompt: "none" });
-      }).catch(() => setSyncStatus({ ok: false, msg: "Drive disconnected — go to Settings to reconnect" }));
-    }
   }, []);
 
   const currentDay = entries[selectedDate] || EMPTY_DAY(selectedDate);
