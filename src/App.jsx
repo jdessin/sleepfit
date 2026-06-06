@@ -679,10 +679,18 @@ export default function App() {
             {(syncStatus || localStorage.getItem("sleepfit_client_id")) && (
               <div style={{ fontSize: 11, marginTop: 2 }}>
                 <span style={S.syncDot(syncStatus ? syncStatus.ok : null)} />
-                {syncStatus ? syncStatus.msg : (localStorage.getItem("sleepfit_last_synced") ? `Last synced ${localStorage.getItem("sleepfit_last_synced")}` : "Connecting to Drive…")}
+                {syncStatus ? syncStatus.msg : (localStorage.getItem("sleepfit_last_synced") ? `Last synced ${localStorage.getItem("sleepfit_last_synced")}` : "Not synced yet")}
               </div>
             )}
           </div>
+          {localStorage.getItem("sleepfit_client_id") && syncStatus?.ok !== true && (
+            <button
+              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 8, border: "1px solid #185FA5", background: "none", color: "#185FA5", cursor: "pointer", fontFamily: "inherit" }}
+              onClick={() => onDriveConnect(localStorage.getItem("sleepfit_client_id"))}
+            >
+              Sync
+            </button>
+          )}
         </div>
         {tab === "log" && (
           <div style={{ display: "flex", gap: 0, borderBottom: "0.5px solid var(--color-border-tertiary)", marginLeft: -20, marginRight: -20, paddingLeft: 20 }}>
